@@ -1,10 +1,13 @@
 package main
 
 import (
-	"fmt"
 	"html/template"
+	"log"
 	"net/http"
 	"strconv"
+	"time"
+
+	"encoding/json"
 
 	"github.com/Shopify/sarama"
 )
@@ -17,62 +20,91 @@ type SalesProduct struct {
 	SalesNumber int
 }
 
+func (this *SalesProduct) Encode() ([]byte, error) {
+	return json.Marshal(this)
+}
+
+func (this *SalesProduct) Length() int {
+	encoded, _ := json.Marshal(this)
+	return len(encoded)
+}
+
+var producer sarama.SyncProducer
+var autoIncrement int
+var topic = "SalesProduct"
+var brokers = []string{"localhost:9092"}
+
 func main() {
 
-	producer, err := initProducer()
-	if err != nil {
-		fmt.Println(err.Error())
-		return
-	}
+	producer = initSyncProducer()
+	defer producer.Close()
 
-	http.HandleFunc("/", handlerMaker(producer, dumbHandler))
+	http.HandleFunc("/", dumbHandler)
 	http.ListenAndServe(":9887", nil)
 
 }
 
-func initProducer() (sarama.AsyncProducer, error) {
-	return nil, nil
-}
+func initSyncProducer() sarama.SyncProducer {
 
-func handlerMaker(producer sarama.AsyncProducer, handler http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
+	config := sarama.NewConfig()
+	config.Producer.Flush.Frequency = time.Hour
+	config.Producer.Retry.Backoff = 200 * time.Millisecond
+	config.Producer.Return.Successes = true
+	config.Producer.Timeout = time.Second
 
+	producer, err := sarama.NewSyncProducer(brokers, config)
+	if err != nil {
+		panic(err)
 	}
-}
 
-func persistSalesProduct(record SalesProduct) {
-	fmt.Println(record)
+	return producer
 }
 
 func dumbHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "GET" {
 		t, err := template.ParseFiles("index.html")
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			panic(err)
 		}
 		err = t.Execute(w, nil)
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			panic(err)
 		}
 	} else {
 		productName := r.FormValue("ProductName")
 		salesDate := r.FormValue("SalesDate")
 		salesNumber, err := strconv.Atoi(r.FormValue("SalesNumber"))
 		if err != nil {
-			fmt.Println(err.Error())
-			return
+			panic(err)
 		}
 
 		salesProduct := &SalesProduct{
+			Id:          autoIncrement,
 			ProductName: productName,
 			SalesDate:   salesDate,
 			SalesNumber: salesNumber,
 		}
+		autoIncrement++
 
-		persistSalesProduct(*salesProduct)
+		log.Println(salesProduct)
+
+		err = produceSyncMessage(producer, salesProduct)
+		if err != nil {
+			panic(err)
+		}
 
 		http.Redirect(w, r, "/", 302)
 	}
+}
+
+func produceSyncMessage(producer sarama.SyncProducer, encoder sarama.Encoder) error {
+
+	message := &sarama.ProducerMessage{
+		Topic: topic,
+		Value: encoder,
+	}
+
+	log.Println(producer.SendMessage(message))
+
+	return nil
 }
