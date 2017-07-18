@@ -1,13 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"html/template"
 	"log"
 	"net/http"
 	"strconv"
-	"time"
-
-	"encoding/json"
 
 	"github.com/Shopify/sarama"
 )
@@ -45,12 +43,10 @@ func main() {
 }
 
 func initSyncProducer() sarama.SyncProducer {
-
 	config := sarama.NewConfig()
-	config.Producer.Flush.Frequency = time.Hour
-	config.Producer.Retry.Backoff = 200 * time.Millisecond
+	// seems default WaitForLocal not work
+	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
-	config.Producer.Timeout = time.Second
 
 	producer, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {
@@ -98,13 +94,17 @@ func dumbHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func produceSyncMessage(producer sarama.SyncProducer, encoder sarama.Encoder) error {
-
 	message := &sarama.ProducerMessage{
 		Topic: topic,
 		Value: encoder,
 	}
 
-	log.Println(producer.SendMessage(message))
+	partition, offset, err := producer.SendMessage(message)
+	if err != nil {
+		panic(err)
+	}
+
+	log.Printf("Partition: %v, Offset: %v\n", partition, offset)
 
 	return nil
 }
