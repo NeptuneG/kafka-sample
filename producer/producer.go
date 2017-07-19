@@ -18,11 +18,15 @@ type SalesProduct struct {
 	SalesNumber int
 }
 
-func (this *SalesProduct) Encode() ([]byte, error) {
+type SalesProductEncoder struct {
+	SalesProduct
+}
+
+func (this *SalesProductEncoder) Encode() ([]byte, error) {
 	return json.Marshal(this)
 }
 
-func (this *SalesProduct) Length() int {
+func (this *SalesProductEncoder) Length() int {
 	encoded, _ := json.Marshal(this)
 	return len(encoded)
 }
@@ -44,8 +48,6 @@ func main() {
 
 func initSyncProducer() sarama.SyncProducer {
 	config := sarama.NewConfig()
-	// seems default WaitForLocal not work
-	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Return.Successes = true
 
 	producer, err := sarama.NewSyncProducer(brokers, config)
@@ -74,7 +76,7 @@ func dumbHandler(w http.ResponseWriter, r *http.Request) {
 			panic(err)
 		}
 
-		salesProduct := &SalesProduct{
+		salesProduct := SalesProduct{
 			Id:          autoIncrement,
 			ProductName: productName,
 			SalesDate:   salesDate,
@@ -84,7 +86,7 @@ func dumbHandler(w http.ResponseWriter, r *http.Request) {
 
 		log.Println(salesProduct)
 
-		err = produceSyncMessage(producer, salesProduct)
+		err = produceSyncMessage(producer, &SalesProductEncoder{salesProduct})
 		if err != nil {
 			panic(err)
 		}
