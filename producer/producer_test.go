@@ -30,13 +30,17 @@ func (sp *SalesProductEncoder) Length() int {
 	return len(encoded)
 }
 
-var producer Producer
-var autoIncrement int
+var (
+	autoIncrement int
+	producer      Producer
+	brokers     = []string{"localhost:9092"}
+	topic       = "SalesProduct"
+)
 
 func TestProducer(t *testing.T) {
 
-	brokers := []string{"localhost:9092"}
-
+	// "async" - sarama.AsyncProducer
+	// "sync"  - sarama.SyncProducer
 	producer = GetProducer("async")
 	defer producer.Close()
 
@@ -59,7 +63,6 @@ func dumbHandler(w http.ResponseWriter, r *http.Request) {
 			panic(err)
 		}
 	} else {
-		topic := "SalesProduct"
 		productName := r.FormValue("ProductName")
 		salesDate := r.FormValue("SalesDate")
 		salesNumber, err := strconv.Atoi(r.FormValue("SalesNumber"))
